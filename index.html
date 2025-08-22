@@ -69,118 +69,7 @@
         <li class="list-group-item">Civic Welfare Training Service (NSTP Component) – Northern Samar Colleges (2015)</li>
       </ul>
     </section>
-  <pre>
-USE [HuManEDGE]
-GO
-SET NOCOUNT ON;
-
--- Input parameters
-DECLARE
-    @pOrgID VARCHAR(20) = 'FE0001',
-    @pStartDate DATE = '2025-08-07',
-    @pEndDate DATE   = '2025-08-07',
-    @pExcludeEmpID VARCHAR(10) = '';
-
--------------------------
--- Step 1: Latest Organizations + Hierarchy
--------------------------
-;WITH OrgLatest AS (
-    SELECT *
-    FROM (
-        SELECT *,
-            ROW_NUMBER() OVER (PARTITION BY OrganizationId ORDER BY StartDate DESC) AS rn
-        FROM Organization_MasterOrganization WITH (NOLOCK)
-        WHERE StartDate <= GETDATE()
-    ) t
-    WHERE rn = 1 AND (EndDate IS NULL OR EndDate >= GETDATE())
-),
-OrgHierarchy AS (
-    SELECT * FROM OrgLatest WHERE OrganizationId = @pOrgID
-    UNION ALL
-    SELECT o.*
-    FROM OrgLatest o
-    INNER JOIN OrgHierarchy h ON h.OrganizationId = o.ParentOrganizationID
-    WHERE o.OrganizationId != @pOrgID
-),
-
--------------------------
--- Step 2: Latest Employee Movements
--------------------------
-LatestMov AS (
-    SELECT 
-        PMI.EmployeeId,
-        ISNULL(dbo.Personnel_getEmployeeNameFormat(PMI.EmployeeId), '[NO NAME]') AS EmpName,
-        PPI.ImageSystemFileUploadsId,
-        PMI.PositionId,
-        PMI.OrganizationId,
-        ROW_NUMBER() OVER (
-            PARTITION BY PMI.EmployeeId 
-            ORDER BY PMI.StartDate DESC, PMI.SortSeq DESC
-        ) AS rn
-    FROM Personnel_MovementInformation PMI WITH (NOLOCK)
-    INNER JOIN Personnel_EmploymentInformation PEI WITH (NOLOCK) 
-        ON PEI.EmployeeId = PMI.EmployeeId
-    INNER JOIN Personnel_PersonalInformation PPI WITH (NOLOCK) 
-        ON PEI.PersonalInformationId = PPI.PersonalInformationId
-    WHERE PEI.StartDate <= GETDATE()
-      AND PMI.StartDate <= GETDATE()
-      AND (PEI.EndDate IS NULL OR PEI.EndDate >= GETDATE())
-),
-LatestMovFiltered AS (
-    SELECT *
-    FROM LatestMov
-    WHERE rn = 1
-),
-
--------------------------
--- Step 3: Latest Positions
--------------------------
-PosLatest AS (
-    SELECT *,
-        ROW_NUMBER() OVER (PARTITION BY PositionId ORDER BY StartDate DESC) AS rn
-    FROM Organization_MasterPosition WITH (NOLOCK)
-    WHERE StartDate <= GETDATE()
-),
-PosLatestFiltered AS (
-    SELECT *
-    FROM PosLatest
-    WHERE rn = 1
-),
-
--------------------------
--- Step 4: Precompute Employee Schedules
--------------------------
-EmpSchedules AS (
-    SELECT DISTINCT S.EmployeeId, S.WorkScheduleCode
-    FROM LatestMovFiltered M
-    CROSS APPLY HUMANEDGEDTR.dbo.DTR_getEmployeeWorkSchedulebyDateRange(
-        M.EmployeeId, @pStartDate, @pEndDate
-    ) S
-)
-
--------------------------
--- Step 5: Final Output
--------------------------
-SELECT 
-    M.EmployeeId,
-    M.EmpName,
-    P.ShortName AS Position,
-    O.ShortName AS OrgName,
-    M.ImageSystemFileUploadsId,
-    E.WorkScheduleCode
-FROM LatestMovFiltered M
-INNER JOIN OrgHierarchy O
-    ON O.OrganizationId = M.OrganizationId
-LEFT JOIN PosLatestFiltered P
-    ON P.PositionId = M.PositionId
-LEFT JOIN EmpSchedules E
-    ON E.EmployeeId = M.EmployeeId
-WHERE ISNULL(@pExcludeEmpID,'') = '' OR M.EmployeeId <> @pExcludeEmpID
-ORDER BY M.EmpName;
-
-SET NOCOUNT OFF;
-GO
-  </pre>
+  
     <!-- Contact Section -->
     <section class="text-center">
       <h3 class="section-title">Contact</h3>
@@ -192,5 +81,6 @@ GO
   </div>
 </body>
 </html>
+
 
 
